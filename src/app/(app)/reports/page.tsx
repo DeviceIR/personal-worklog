@@ -209,9 +209,13 @@ export default function ReportsPage() {
                 <BarChart
                   data={chartData}
                   onClick={(state) => {
-                    const day = state?.activePayload?.[0]?.payload?.date as
-                      | string
-                      | undefined;
+                    const index =
+                      typeof state?.activeIndex === "number"
+                        ? state.activeIndex
+                        : typeof state?.activeTooltipIndex === "number"
+                          ? state.activeTooltipIndex
+                          : -1;
+                    const day = chartData[index]?.date;
                     if (day) loadDay(day);
                   }}
                   style={{ cursor: "pointer" }}
