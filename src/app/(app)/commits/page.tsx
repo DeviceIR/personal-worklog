@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
+import { formatDayLabel, groupByDay } from "@/lib/dates";
 
 type Commit = {
   id: string;
@@ -31,21 +32,46 @@ export default function CommitsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [csv, setCsv] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString() ? `?${params}` : "";
     const [cRes, tRes] = await Promise.all([
-      fetch("/api/commits"),
-      fetch("/api/time-entries"),
+      fetch(`/api/commits${qs}`),
+      fetch(`/api/time-entries${qs}`),
     ]);
     if (cRes.ok) setCommits(await cRes.json());
     if (tRes.ok) setTimeEntries(await tRes.json());
     setLoading(false);
-  }, []);
+  }, [from, to]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const commitGroups = useMemo(
+    () => groupByDay(commits, (c) => c.committedAt),
+    [commits]
+  );
+  const timeGroups = useMemo(
+    () => groupByDay(timeEntries, (t) => t.date),
+    [timeEntries]
+  );
+
+  function setSingleDay(day: string) {
+    setFrom(day);
+    setTo(day);
+  }
+
+  function clearDates() {
+    setFrom("");
+    setTo("");
+  }
 
   async function syncGithub() {
     setBusy(true);
@@ -90,6 +116,13 @@ export default function CommitsPage() {
     await load();
   }
 
+  const filterLabel =
+    from || to
+      ? from && to && from === to
+        ? formatDayLabel(from)
+        : `${from ? formatDayLabel(from) : "…"} → ${to ? formatDayLabel(to) : "…"}`
+      : null;
+
   return (
     <div>
       <div className="page-header">
@@ -111,6 +144,60 @@ export default function CommitsPage() {
 
       {error ? <div className="error">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
+
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <h3 style={{ marginTop: 0 }}>Filter by date</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Pick one day (same From &amp; To) or a range. Example: 29 Nov 2025.
+        </p>
+        <div className="row">
+          <div>
+            <label className="label" htmlFor="commits-from">
+              From
+            </label>
+            <input
+              id="commits-from"
+              className="input"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="commits-to">
+              To
+            </label>
+            <input
+              id="commits-to"
+              className="input"
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
+          <div style={{ alignSelf: "flex-end" }} className="row">
+            {from || to ? (
+              <button type="button" className="btn btn-ghost" onClick={clearDates}>
+                Clear
+              </button>
+            ) : null}
+            {from && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setSingleDay(from)}
+              >
+                This day only
+              </button>
+            )}
+          </div>
+        </div>
+        {filterLabel ? (
+          <p className="muted" style={{ marginBottom: 0, marginTop: "0.75rem" }}>
+            Showing activity for <strong>{filterLabel}</strong>
+          </p>
+        ) : null}
+      </div>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginTop: 0 }}>Import Clockify CSV</h3>
@@ -156,47 +243,85 @@ export default function CommitsPage() {
         ) : tab === "commits" ? (
           commits.length === 0 ? (
             <div className="empty">
-              No commits yet. Add a GitHub token in Settings, then sync.
+              {filterLabel
+                ? `No commits on ${filterLabel}.`
+                : "No commits yet. Add a GitHub token in Settings, then sync."}
             </div>
           ) : (
-            commits.map((c) => (
-              <div key={c.id} className="commit-item">
-                <div className="task-body">
-                  <p className="task-title" style={{ whiteSpace: "pre-wrap" }}>
-                    {c.message}
-                  </p>
-                  <p className="muted">
-                    <span className="sha">{c.sha.slice(0, 7)}</span>
-                    {" · "}
-                    {c.repo}
-                    {" · "}
-                    {format(new Date(c.committedAt), "dd MMM yyyy HH:mm")}
-                    {" · "}
-                    ~{c.estimatedMinutes}m
-                  </p>
+            commitGroups.map((group) => (
+              <section key={group.day} className="day-group">
+                <div className="day-group-header">
+                  <h3>{formatDayLabel(group.day)}</h3>
+                  <span className="muted">
+                    {group.items.length} commit
+                    {group.items.length === 1 ? "" : "s"} · ~
+                    {group.items.reduce((s, c) => s + c.estimatedMinutes, 0)}m
+                  </span>
                 </div>
-              </div>
+                {group.items.map((c) => (
+                  <div key={c.id} className="commit-item">
+                    <div className="task-body">
+                      <p
+                        className="task-title"
+                        style={{ whiteSpace: "pre-wrap" }}
+                      >
+                        {c.message}
+                      </p>
+                      <p className="muted">
+                        <span className="sha">{c.sha.slice(0, 7)}</span>
+                        {" · "}
+                        {c.repo}
+                        {" · "}
+                        {format(new Date(c.committedAt), "HH:mm")}
+                        {" · "}
+                        ~{c.estimatedMinutes}m
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </section>
             ))
           )
         ) : timeEntries.length === 0 ? (
-          <div className="empty">No time entries yet. Import a CSV above.</div>
+          <div className="empty">
+            {filterLabel
+              ? `No time entries on ${filterLabel}.`
+              : "No time entries yet. Import a CSV above."}
+          </div>
         ) : (
-          timeEntries.map((t) => (
-            <div key={t.id} className="time-item">
-              <div className="task-body">
-                <p className="task-title" style={{ whiteSpace: "pre-wrap" }}>
-                  {t.description || "(no description)"}
-                </p>
-                <p className="muted">
-                  {format(new Date(t.date), "dd MMM yyyy")}
-                  {t.startTime ? ` · ${t.startTime}` : ""}
-                  {" · "}
-                  {Math.floor(t.durationMinutes / 60)}h{" "}
-                  {t.durationMinutes % 60}m
-                  {t.project ? ` · ${t.project}` : ""}
-                </p>
+          timeGroups.map((group) => (
+            <section key={group.day} className="day-group">
+              <div className="day-group-header">
+                <h3>{formatDayLabel(group.day)}</h3>
+                <span className="muted">
+                  {group.items.length} entr
+                  {group.items.length === 1 ? "y" : "ies"} ·{" "}
+                  {Math.floor(
+                    group.items.reduce((s, t) => s + t.durationMinutes, 0) / 60
+                  )}
+                  h{" "}
+                  {group.items.reduce((s, t) => s + t.durationMinutes, 0) % 60}m
+                </span>
               </div>
-            </div>
+              {group.items.map((t) => (
+                <div key={t.id} className="time-item">
+                  <div className="task-body">
+                    <p
+                      className="task-title"
+                      style={{ whiteSpace: "pre-wrap" }}
+                    >
+                      {t.description || "(no description)"}
+                    </p>
+                    <p className="muted">
+                      {t.startTime ? `${t.startTime} · ` : ""}
+                      {Math.floor(t.durationMinutes / 60)}h{" "}
+                      {t.durationMinutes % 60}m
+                      {t.project ? ` · ${t.project}` : ""}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </section>
           ))
         )}
       </div>
