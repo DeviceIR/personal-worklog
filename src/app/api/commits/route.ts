@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthUser, unauthorized } from "@/lib/api-auth";
 import { decrypt } from "@/lib/crypto";
+import { dayKey, splitActivityLines } from "@/lib/dates";
 
 type GhCommit = {
   sha: string;
@@ -50,8 +51,79 @@ export async function POST(req: NextRequest) {
   if (action === "import-csv") {
     return importCsv(user.id, String(body.csv || ""));
   }
+  if (action === "generate-tasks-from-time") {
+    return generateTasksFromTimeEntries(user.id);
+  }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+}
+
+/** Create done tasks from activity lines (Clockify | -separated commits). */
+async function createTasksFromActivity(
+  userId: string,
+  date: Date,
+  description: string | null,
+  project: string | null
+): Promise<number> {
+  const lines = splitActivityLines(description);
+  if (lines.length === 0) return 0;
+
+  const day = dayKey(date);
+  const dayStart = new Date(day + "T00:00:00");
+  const dayEnd = new Date(day + "T23:59:59.999");
+
+  const existing = await prisma.task.findMany({
+    where: {
+      userId,
+      dueDate: { gte: dayStart, lte: dayEnd },
+    },
+    select: { title: true },
+  });
+  const existingTitles = new Set(existing.map((t) => t.title.toLowerCase()));
+
+  let created = 0;
+  for (const line of lines) {
+    const title = line.slice(0, 200);
+    if (existingTitles.has(title.toLowerCase())) continue;
+
+    await prisma.task.create({
+      data: {
+        userId,
+        title,
+        description: project
+          ? `From ${project} · ${day}`
+          : `From time log · ${day}`,
+        status: "done",
+        dueDate: dayStart,
+      },
+    });
+    existingTitles.add(title.toLowerCase());
+    created += 1;
+  }
+  return created;
+}
+
+async function generateTasksFromTimeEntries(userId: string) {
+  const entries = await prisma.timeEntry.findMany({
+    where: { userId },
+    orderBy: { date: "asc" },
+  });
+
+  let tasksCreated = 0;
+  for (const entry of entries) {
+    tasksCreated += await createTasksFromActivity(
+      userId,
+      entry.date,
+      entry.description,
+      entry.project
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    entries: entries.length,
+    tasksCreated,
+  });
 }
 
 async function syncFromGithub(userId: string, sinceOverride?: string) {
@@ -266,6 +338,7 @@ async function importCsv(userId: string, csv: string) {
   }
 
   let created = 0;
+  let tasksCreated = 0;
   for (const line of lines.slice(1)) {
     const cols = parseLine(line);
     const date = parseCsvDate(cols[iDate] || "");
@@ -287,7 +360,13 @@ async function importCsv(userId: string, csv: string) {
       },
     });
     created += 1;
+    tasksCreated += await createTasksFromActivity(
+      userId,
+      date,
+      description,
+      project
+    );
   }
 
-  return NextResponse.json({ ok: true, created });
+  return NextResponse.json({ ok: true, created, tasksCreated });
 }

@@ -2,7 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { formatDayLabel, groupByDay } from "@/lib/dates";
+import { ActivityBullets } from "@/components/ActivityBullets";
+import {
+  formatDayLabel,
+  formatDuration,
+  groupByDay,
+  splitActivityLines,
+} from "@/lib/dates";
 
 type Commit = {
   id: string;
@@ -22,6 +28,10 @@ type TimeEntry = {
   project: string | null;
   description: string | null;
 };
+
+function commitSubject(message: string): string {
+  return message.split("\n")[0]?.trim() || message;
+}
 
 export default function CommitsPage() {
   const [tab, setTab] = useState<"commits" | "time">("commits");
@@ -110,10 +120,34 @@ export default function CommitsPage() {
       setError(data.error || "Import failed");
       return;
     }
-    setMessage(`Imported ${data.created} time entries from CSV`);
+    setMessage(
+      data.tasksCreated
+        ? `Imported ${data.created} time entries and created ${data.tasksCreated} done tasks`
+        : `Imported ${data.created} time entries from CSV`
+    );
     setCsv("");
     setTab("time");
     await load();
+  }
+
+  async function generateTasksFromTime() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const res = await fetch("/api/commits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "generate-tasks-from-time" }),
+    });
+    const data = await res.json();
+    setBusy(false);
+    if (!res.ok) {
+      setError(data.error || "Could not generate tasks");
+      return;
+    }
+    setMessage(
+      `Created ${data.tasksCreated} tasks from ${data.entries} time entries (duplicates skipped)`
+    );
   }
 
   const filterLabel =
@@ -131,6 +165,14 @@ export default function CommitsPage() {
           <p>GitHub sync and Clockify CSV import</p>
         </div>
         <div className="row">
+          <button
+            type="button"
+            className="btn"
+            onClick={generateTasksFromTime}
+            disabled={busy}
+          >
+            Generate tasks from time logs
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -203,7 +245,9 @@ export default function CommitsPage() {
         <h3 style={{ marginTop: 0 }}>Import Clockify CSV</h3>
         <p className="muted">
           Paste CSV with columns: Email, Start date, Start time, Duration,
-          Project, Description
+          Project, Description. Each{" "}
+          <code>|</code>-separated item becomes a <strong>done</strong> task
+          for that day.
         </p>
         <form onSubmit={importCsv}>
           <textarea
@@ -255,30 +299,25 @@ export default function CommitsPage() {
                   <span className="muted">
                     {group.items.length} commit
                     {group.items.length === 1 ? "" : "s"} · ~
-                    {group.items.reduce((s, c) => s + c.estimatedMinutes, 0)}m
+                    {formatDuration(
+                      group.items.reduce((s, c) => s + c.estimatedMinutes, 0)
+                    )}
                   </span>
                 </div>
-                {group.items.map((c) => (
-                  <div key={c.id} className="commit-item">
-                    <div className="task-body">
-                      <p
-                        className="task-title"
-                        style={{ whiteSpace: "pre-wrap" }}
-                      >
-                        {c.message}
-                      </p>
-                      <p className="muted">
+                <ul className="activity-list">
+                  {group.items.map((c) => (
+                    <li key={c.id}>
+                      <span className="activity-main">
+                        {commitSubject(c.message)}
+                      </span>
+                      <span className="activity-meta muted">
                         <span className="sha">{c.sha.slice(0, 7)}</span>
                         {" · "}
-                        {c.repo}
-                        {" · "}
                         {format(new Date(c.committedAt), "HH:mm")}
-                        {" · "}
-                        ~{c.estimatedMinutes}m
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </section>
             ))
           )
@@ -289,40 +328,40 @@ export default function CommitsPage() {
               : "No time entries yet. Import a CSV above."}
           </div>
         ) : (
-          timeGroups.map((group) => (
-            <section key={group.day} className="day-group">
-              <div className="day-group-header">
-                <h3>{formatDayLabel(group.day)}</h3>
-                <span className="muted">
-                  {group.items.length} entr
-                  {group.items.length === 1 ? "y" : "ies"} ·{" "}
-                  {Math.floor(
-                    group.items.reduce((s, t) => s + t.durationMinutes, 0) / 60
-                  )}
-                  h{" "}
-                  {group.items.reduce((s, t) => s + t.durationMinutes, 0) % 60}m
-                </span>
-              </div>
-              {group.items.map((t) => (
-                <div key={t.id} className="time-item">
-                  <div className="task-body">
-                    <p
-                      className="task-title"
-                      style={{ whiteSpace: "pre-wrap" }}
-                    >
-                      {t.description || "(no description)"}
-                    </p>
-                    <p className="muted">
-                      {t.startTime ? `${t.startTime} · ` : ""}
-                      {Math.floor(t.durationMinutes / 60)}h{" "}
-                      {t.durationMinutes % 60}m
-                      {t.project ? ` · ${t.project}` : ""}
-                    </p>
-                  </div>
+          timeGroups.map((group) => {
+            const totalMins = group.items.reduce(
+              (s, t) => s + t.durationMinutes,
+              0
+            );
+            return (
+              <section key={group.day} className="day-group">
+                <div className="day-group-header">
+                  <h3>{formatDayLabel(group.day)}</h3>
+                  <span className="muted">
+                    {group.items.length} entr
+                    {group.items.length === 1 ? "y" : "ies"} ·{" "}
+                    {formatDuration(totalMins)}
+                  </span>
                 </div>
-              ))}
-            </section>
-          ))
+                {group.items.map((t) => {
+                  const lines = splitActivityLines(t.description);
+                  return (
+                    <div key={t.id} className="time-block">
+                      <p className="time-block-meta muted">
+                        {t.startTime ? `${t.startTime} · ` : ""}
+                        {formatDuration(t.durationMinutes)}
+                        {t.project ? ` · ${t.project}` : ""}
+                        {lines.length > 1
+                          ? ` · ${lines.length} items`
+                          : ""}
+                      </p>
+                      <ActivityBullets lines={lines} />
+                    </div>
+                  );
+                })}
+              </section>
+            );
+          })
         )}
       </div>
     </div>

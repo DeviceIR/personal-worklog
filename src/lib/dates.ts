@@ -31,3 +31,23 @@ export function groupByDay<T>(
     .sort(([a], [b]) => (a < b ? 1 : -1))
     .map(([day, groupItems]) => ({ day, items: groupItems }));
 }
+
+/**
+ * Split Clockify-style descriptions that pack many commits into one line
+ * with " | " (or " / ") separators into bullet items.
+ */
+export function splitActivityLines(text: string | null | undefined): string[] {
+  if (!text?.trim()) return [];
+  const parts = text
+    .split(/\s*\|\s*/)
+    .flatMap((part) => part.split(/\s+\/\s+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [text.trim()];
+}
+
+export function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h ${m}m`;
+}

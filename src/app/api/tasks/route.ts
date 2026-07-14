@@ -15,7 +15,11 @@ export async function GET(req: NextRequest) {
         ? { status: status as TaskStatus }
         : {}),
     },
-    orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+    orderBy: [
+      { dueDate: "desc" },
+      { status: "asc" },
+      { updatedAt: "desc" },
+    ],
   });
 
   return NextResponse.json(tasks);

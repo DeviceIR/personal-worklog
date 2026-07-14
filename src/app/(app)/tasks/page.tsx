@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { formatDayLabel, groupByDay } from "@/lib/dates";
 
 type Task = {
   id: string;
@@ -43,6 +44,13 @@ export default function TasksPage() {
     load();
   }, [load]);
 
+  const datedGroups = useMemo(() => {
+    const withDate = tasks.filter((t) => t.dueDate);
+    const withoutDate = tasks.filter((t) => !t.dueDate);
+    const groups = groupByDay(withDate, (t) => t.dueDate!);
+    return { groups, withoutDate };
+  }, [tasks]);
+
   async function addTask(e: FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -76,12 +84,62 @@ export default function TasksPage() {
     await load();
   }
 
+  function renderTask(t: Task) {
+    return (
+      <div key={t.id} className="task-item">
+        <div className="task-body">
+          <p className="task-title">{t.title}</p>
+          {t.description ? <p className="muted">{t.description}</p> : null}
+          <span className={`badge badge-${t.status}`}>{t.status}</span>
+        </div>
+        <div className="row">
+          {t.status !== "todo" ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setStatus(t.id, "todo")}
+            >
+              Todo
+            </button>
+          ) : null}
+          {t.status !== "doing" ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setStatus(t.id, "doing")}
+            >
+              Doing
+            </button>
+          ) : null}
+          {t.status !== "done" ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setStatus(t.id, "done")}
+            >
+              Done
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={() => remove(t.id)}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1>Tasks</h1>
-          <p>Your personal task list — private to your account</p>
+          <p>
+            Your personal task list — CSV commit lines become done tasks by day
+          </p>
         </div>
       </div>
 
@@ -119,55 +177,67 @@ export default function TasksPage() {
         {loading ? (
           <div className="empty">Loading…</div>
         ) : tasks.length === 0 ? (
-          <div className="empty">No tasks yet</div>
+          <div className="empty">
+            No tasks yet. Import a Clockify CSV on Commits, or click{" "}
+            <strong>Generate tasks from time logs</strong>.
+          </div>
         ) : (
-          tasks.map((t) => (
-            <div key={t.id} className="task-item">
-              <div className="task-body">
-                <p className="task-title">{t.title}</p>
-                {t.description ? (
-                  <p className="muted">{t.description}</p>
-                ) : null}
-                <span className={`badge badge-${t.status}`}>{t.status}</span>
-              </div>
-              <div className="row">
-                {t.status !== "todo" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setStatus(t.id, "todo")}
-                  >
-                    Todo
-                  </button>
-                ) : null}
-                {t.status !== "doing" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setStatus(t.id, "doing")}
-                  >
-                    Doing
-                  </button>
-                ) : null}
-                {t.status !== "done" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setStatus(t.id, "done")}
-                  >
-                    Done
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={() => remove(t.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))
+          <>
+            {datedGroups.groups.map((group) => (
+              <section key={group.day} className="day-group">
+                <div className="day-group-header">
+                  <h3>{formatDayLabel(group.day)}</h3>
+                  <span className="muted">
+                    {group.items.length} task
+                    {group.items.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <ul className="activity-list task-day-list">
+                  {group.items.map((t) => (
+                    <li key={t.id}>
+                      <div className="task-bullet-row">
+                        <span className="activity-main">{t.title}</span>
+                        <span className={`badge badge-${t.status}`}>
+                          {t.status}
+                        </span>
+                        <div className="row task-bullet-actions">
+                          {t.status !== "done" ? (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => setStatus(t.id, "done")}
+                            >
+                              Done
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            onClick={() => remove(t.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {datedGroups.withoutDate.length > 0 ? (
+              <section className="day-group">
+                <div className="day-group-header">
+                  <h3>No date</h3>
+                  <span className="muted">
+                    {datedGroups.withoutDate.length} task
+                    {datedGroups.withoutDate.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {datedGroups.withoutDate.map(renderTask)}
+              </section>
+            ) : null}
+          </>
         )}
       </div>
     </div>

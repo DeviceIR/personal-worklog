@@ -439,6 +439,73 @@ button {
   font-weight: 650;
 }
 
+.activity-list {
+  margin: 0.35rem 0 0;
+  padding: 0 0 0 1.15rem;
+  list-style: disc;
+}
+
+.activity-list li {
+  padding: 0.28rem 0;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.activity-list li::marker {
+  color: var(--accent);
+}
+
+.activity-main {
+  display: inline;
+}
+
+.activity-meta {
+  display: inline;
+  margin-left: 0.45rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.time-block {
+  margin-top: 0.55rem;
+}
+
+.time-block + .time-block {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+}
+
+.time-block-meta {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+}
+
+.task-day-list li {
+  list-style: disc;
+}
+
+.task-bullet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+}
+
+.task-bullet-row .activity-main {
+  flex: 1;
+  min-width: 140px;
+}
+
+.task-bullet-actions {
+  margin-left: auto;
+}
+
+.task-bullet-actions .btn {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8rem;
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding: 0.85rem 0.85rem 2.5rem;

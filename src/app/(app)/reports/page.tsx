@@ -12,7 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import { format, subDays } from "date-fns";
-import { formatDayLabel } from "@/lib/dates";
+import { ActivityBullets } from "@/components/ActivityBullets";
+import { formatDayLabel, formatDuration, splitActivityLines } from "@/lib/dates";
 
 type Report = {
   from: string;
@@ -311,27 +312,20 @@ export default function ReportsPage() {
                   {dayCommits.length === 0 ? (
                     <p className="muted">No commits this day.</p>
                   ) : (
-                    dayCommits.map((c) => (
-                      <div key={c.id} className="commit-item">
-                        <div className="task-body">
-                          <p
-                            className="task-title"
-                            style={{ whiteSpace: "pre-wrap" }}
-                          >
-                            {c.message}
-                          </p>
-                          <p className="muted">
+                    <ul className="activity-list">
+                      {dayCommits.map((c) => (
+                        <li key={c.id}>
+                          <span className="activity-main">
+                            {c.message.split("\n")[0]?.trim() || c.message}
+                          </span>
+                          <span className="activity-meta muted">
                             <span className="sha">{c.sha.slice(0, 7)}</span>
                             {" · "}
-                            {c.repo}
-                            {" · "}
                             {format(new Date(c.committedAt), "HH:mm")}
-                            {" · "}
-                            ~{c.estimatedMinutes}m
-                          </p>
-                        </div>
-                      </div>
-                    ))
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
 
                   <h4 className="day-section-title">
@@ -340,24 +334,22 @@ export default function ReportsPage() {
                   {dayTimeEntries.length === 0 ? (
                     <p className="muted">No time entries this day.</p>
                   ) : (
-                    dayTimeEntries.map((t) => (
-                      <div key={t.id} className="time-item">
-                        <div className="task-body">
-                          <p
-                            className="task-title"
-                            style={{ whiteSpace: "pre-wrap" }}
-                          >
-                            {t.description || "(no description)"}
-                          </p>
-                          <p className="muted">
+                    dayTimeEntries.map((t) => {
+                      const lines = splitActivityLines(t.description);
+                      return (
+                        <div key={t.id} className="time-block">
+                          <p className="time-block-meta muted">
                             {t.startTime ? `${t.startTime} · ` : ""}
-                            {Math.floor(t.durationMinutes / 60)}h{" "}
-                            {t.durationMinutes % 60}m
+                            {formatDuration(t.durationMinutes)}
                             {t.project ? ` · ${t.project}` : ""}
+                            {lines.length > 1
+                              ? ` · ${lines.length} items`
+                              : ""}
                           </p>
+                          <ActivityBullets lines={lines} />
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </>
               )}
