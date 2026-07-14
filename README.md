@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Worklog
 
-## Getting Started
+Multi-user app for **Tasks**, **Commits**, and **Reports**.  
+Stack: Next.js + Prisma + PostgreSQL + Better Auth. Deploy on **Render**.
 
-First, run the development server:
+## Features
+
+- **Auth** — register / login (email + password); each user only sees their own data
+- **Tasks** — create, filter by status (todo / doing / done), complete, delete
+- **Commits** — sync your commits from GitHub; import Clockify CSV time entries
+- **Reports** — range totals + daily chart (commits & logged hours)
+- **Settings** — GitHub PAT (encrypted), default repo, sync-since date
+
+## Local development
+
+### 1. Postgres
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Or point `DATABASE_URL` at any Postgres instance.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. Env
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env
+```
 
-## Learn More
+Edit if needed. Defaults match `docker-compose.yml`.
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Migrate & run
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+npx prisma migrate dev --name init
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000) → register an account.
 
-## Deploy on Vercel
+### GitHub sync
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Create a [fine-grained or classic PAT](https://github.com/settings/tokens) with access to the target repo
+2. **Settings** → paste token, set `owner/repo`, sync since date → Save
+3. **Commits** → Sync from GitHub
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### CSV import
+
+On **Commits**, paste a Clockify CSV:
+
+```text
+Email,Start date,Start time,Duration,Project,Description
+```
+
+## Deploy on Render
+
+1. Push this repo to GitHub
+2. In Render: **New** → **Blueprint** → select the repo (`render.yaml`)
+   - Or manually: create **PostgreSQL** + **Web Service**
+3. Web Service settings:
+   - **Build**: `npm install && npx prisma generate && npm run build`
+   - **Start**: `npx prisma migrate deploy && npm run start`
+4. Set env vars:
+   - `DATABASE_URL` — from Render Postgres (Internal Database URL)
+   - `BETTER_AUTH_SECRET` — long random string
+   - `BETTER_AUTH_URL` — your public URL, e.g. `https://personal-worklog.onrender.com`
+   - `ENCRYPTION_KEY` — long random string (for GitHub token encryption)
+5. Deploy. First free-tier boot may take ~1 minute (cold start).
+
+## Project layout
+
+```text
+src/app/(app)/tasks|commits|reports|settings   # protected pages
+src/app/api/tasks|commits|reports|settings     # APIs (user-scoped)
+src/app/api/auth/[...all]                      # Better Auth
+prisma/schema.prisma
+render.yaml
+```
+
+## Notes
+
+- Timesheet CSV import requires no Clockify API — paste file contents only
+- Estimated commit hours use 45 minutes per commit (same idea as the git→Clockify export)
+- Do not commit real `.env` files or GitHub tokens
